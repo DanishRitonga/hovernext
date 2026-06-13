@@ -115,7 +115,8 @@ def remap_label(pred, by_size=False):
         by_size : renaming with larger nuclei has smaller id (on-top)
     """
     pred_id = list(np.unique(pred))
-    pred_id.remove(0)
+    if 0 in pred_id:
+        pred_id.remove(0)
     if len(pred_id) == 0:
         return pred # no label
     if by_size:
@@ -149,7 +150,8 @@ def binarize(x):
         x_ch = x[:,:,i]
         unique_vals = np.unique(x_ch)
         unique_vals = unique_vals.tolist()
-        unique_vals.remove(0)
+        if 0 in unique_vals:
+            unique_vals.remove(0)
         for j in unique_vals:
             x_tmp = x_ch == j
             x_tmp_c = 1- x_tmp
