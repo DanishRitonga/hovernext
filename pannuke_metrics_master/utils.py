@@ -32,6 +32,14 @@ def get_fast_pq(true, pred, match_iou=0.5):
     pred = np.copy(pred)
     true_id_list = list(np.unique(true))
     pred_id_list = list(np.unique(pred))
+    
+    # ensure contiguous IDs (safety check)
+    if true_id_list != list(range(len(true_id_list))):
+        true = remap_label(true)
+        true_id_list = list(np.unique(true))
+    if pred_id_list != list(range(len(pred_id_list))):
+        pred = remap_label(pred)
+        pred_id_list = list(np.unique(pred))
 
     true_masks = [None,]
     for t in true_id_list[1:]:
