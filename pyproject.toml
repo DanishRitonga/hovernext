@@ -1,0 +1,27 @@
+[project]
+name = "hovernext-skripsi"
+version = "1.0.0"
+description = "HoVer-NeXt nucleus instance segmentation and classification fine-tuned on PanNuke"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "torch",
+    "torchvision",
+    "timm>=0.9.6",
+    "segmentation-models-pytorch==0.1.0",
+    "mahotas",
+    "opencv-python-headless",
+    "scikit-image",
+    "scikit-learn",
+    "scipy",
+    "pandas",
+    "toml",
+    "datasets",
+    "numpy",
+    "tifffile",
+    "tqdm",
+    "Pillow",
+]
+
+[project.scripts]
+hovernext-skripsi = "main:main"
