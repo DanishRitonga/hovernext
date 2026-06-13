@@ -40,7 +40,7 @@ max_hole_size = 128
 checkpoint_path = ""
 experiment = "pannuke_convnextv2_tiny"
 seed = 42
-fold = 2
+fold = 1
 test_as_val = false
 optim_metric = "pannuke"
 
