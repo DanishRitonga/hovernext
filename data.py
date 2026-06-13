@@ -15,6 +15,7 @@ The upstream HoVer-NeXt `src/data_utils.py:get_pannuke()` expects data laid out 
 from __future__ import annotations
 
 import gc
+import time
 from pathlib import Path
 
 import numpy as np
@@ -79,6 +80,7 @@ def _fold_has_data(fold_name: str) -> bool:
 def _process_fold(
     fold_name: str,
     max_samples: int | None,
+    max_retries: int = 5,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Stream one PanNuke fold from HuggingFace and return stacked arrays.
 
@@ -87,33 +89,49 @@ def _process_fold(
         labels: (N, H, W, 2) int32  [instance, class]
         types:  (N,) <U30 tissue-type strings
     """
-    ds = load_dataset(DATASET_ID, split=fold_name, streaming=True)
-    if max_samples is not None:
-        ds = ds.take(max_samples)
-
     images: list[np.ndarray] = []
     labels: list[np.ndarray] = []
     types: list[str] = []
 
-    i = -1
-    for i, sample in enumerate(tqdm(ds, desc=fold_name, unit="img")):
-        img: Image.Image = sample["image"]
-        img_w, img_h = img.size
-        img_np = np.array(img, dtype=np.uint8)
+    for attempt in range(max_retries):
+        try:
+            ds = load_dataset(DATASET_ID, split=fold_name, streaming=True)
+            if max_samples is not None:
+                ds = ds.take(max_samples)
 
-        labelmap = _instances_to_labelmap(sample["instances"], img_h, img_w)
-        class_map = _build_class_map(labelmap, sample["categories"])
+            start_idx = len(images)
+            i = -1
+            for i, sample in enumerate(tqdm(
+                ds, desc=fold_name, unit="img", initial=start_idx,
+            )):
+                img: Image.Image = sample["image"]
+                img_w, img_h = img.size
+                img_np = np.array(img, dtype=np.uint8)
 
-        label_2ch = np.stack([labelmap, class_map], axis=-1).astype(np.int32)
+                labelmap = _instances_to_labelmap(sample["instances"], img_h, img_w)
+                class_map = _build_class_map(labelmap, sample["categories"])
 
-        images.append(img_np)
-        labels.append(label_2ch)
-        types.append(sample.get("tissue", "Unknown"))
+                label_2ch = np.stack([labelmap, class_map], axis=-1).astype(np.int32)
 
-        if i % 100 == 0:
-            gc.collect()
+                images.append(img_np)
+                labels.append(label_2ch)
+                types.append(sample.get("tissue", "Unknown"))
 
-    if i < 0:
+                if i % 100 == 0:
+                    gc.collect()
+
+            break
+        except Exception as e:
+            print(f"\n  Error at {len(images)} images: {e}")
+            if attempt < max_retries - 1:
+                wait = 10 * (attempt + 1)
+                print(f"  Retrying in {wait}s... (attempt {attempt + 2}/{max_retries})")
+                time.sleep(wait)
+                gc.collect()
+            else:
+                raise
+
+    if len(images) == 0:
         raise RuntimeError(f"No samples loaded from {fold_name}")
 
     images_arr = np.stack(images, axis=0)
@@ -121,7 +139,7 @@ def _process_fold(
     types_arr = np.array(types, dtype="<U30")
 
     n_instances = int(labels_arr[..., 0].max())
-    print(f"  {fold_name}: {i+1} images, {n_instances} instances")
+    print(f"  {fold_name}: {len(images)} images, {n_instances} instances")
 
     return images_arr, labels_arr, types_arr
 
