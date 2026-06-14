@@ -11,7 +11,7 @@ import timm
 
 
 def load_checkpoint(model, cp_path, rank=0):
-    cp = torch.load(cp_path, map_location=f"cuda:{rank}")
+    cp = torch.load(cp_path, map_location=f"cuda:{rank}", weights_only=False)
     step = cp["step"]
     try:
         best_loss = cp["best_loss"]
