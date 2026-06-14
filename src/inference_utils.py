@@ -41,9 +41,6 @@ def run_inference(dataloader, models, aug, color_aug_fn, tta=16, rank=0):
     pred_emb_list = []
     pred_class_list = []
     gt_list = []
-    raw_list = []
-    # if normalization is None:
-    #     normalization = lambda x: x
     i = 0
     for raw, gt in tqdm(dataloader):
         raw = raw.to(rank).float()
@@ -58,10 +55,11 @@ def run_inference(dataloader, models, aug, color_aug_fn, tta=16, rank=0):
             pred_emb_list.append(pred_inst.squeeze().cpu().detach().numpy())
             pred_class_list.append(pred_ct.cpu().detach().numpy())
             gt_list.append(gt.permute(0, 2, 3, 1).cpu().detach().numpy())
-            raw_list.append(raw.permute(0, 2, 3, 1).cpu().detach().numpy())
+            del pred_ct, pred_inst
+            torch.cuda.empty_cache()
 
+    print("Concatenating inference results ...")
     pred_emb_list = np.concatenate(pred_emb_list)
     pred_class_list = np.concatenate(pred_class_list)
     gt_list = np.concatenate(gt_list)
-    raw_list = np.concatenate(raw_list)
-    return pred_emb_list, pred_class_list, gt_list, raw_list
+    return pred_emb_list, pred_class_list, gt_list, None

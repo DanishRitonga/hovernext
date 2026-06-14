@@ -110,7 +110,7 @@ def evaluate(
     color_aug_fn = color_augmentations(False, s=params["color_scale"], rank=0)
     fast_aug = SpatialAugmenter(params["aug_params_fast"], random_seed=params["seed"])
 
-    print("Running inference ...")
+    print("Running inference ...", flush=True)
     pred_emb_list, pred_class_list, gt_list, _ = run_inference(
         test_dataloader,
         [model],
@@ -119,6 +119,7 @@ def evaluate(
         tta=params.get("tta", 16),
         rank=0,
     )
+    print(f"Inference done. Shapes: emb={pred_emb_list.shape}, cls={pred_class_list.shape}", flush=True)
 
     if fg_thresh is None or seed_thresh is None:
         try:
