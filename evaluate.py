@@ -565,7 +565,7 @@ def evaluate(
     print("Computing metrics (streaming) ...", flush=True)
     gt_inst_list = [gt_list[i][..., 0] for i in range(len(gt_list))]
     gt_cls_list = [gt_list[i][..., 1] for i in range(len(gt_list))]
-    tissue_indices = [tissue_to_idx(t) for t in tissue_types]
+    tissue_indices = [int(t) for t in tissue_types]
 
     metrics = compute_metrics_streaming(
         pred_inst_list,
