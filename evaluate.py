@@ -183,6 +183,10 @@ def compute_metrics_streaming(
     bmpq_scores = []
     class_pq = {c: [] for c in range(num_classes)}
     class_mpq = {c: [] for c in range(num_classes)}
+    class_bpq = {c: [] for c in range(num_classes)}
+    class_ct_tp = [0] * num_classes
+    class_ct_fp = [0] * num_classes
+    class_ct_fn = [0] * num_classes
     centroid_tp = 0
     centroid_fp = 0
     centroid_fn = 0
@@ -263,6 +267,12 @@ def compute_metrics_streaming(
                 mpq = 0.0
             class_mpq[cls_id].append(mpq)
 
+            if pred_idx and gt_idx:
+                cls_pred_binary = np.stack([pred_masks[j] for j in pred_idx]).max(axis=0).astype(np.uint8)
+                cls_gt_binary = np.stack([gt_masks[j] for j in gt_idx]).max(axis=0).astype(np.uint8)
+                cls_bpq, _, _ = compute_pq_masked([cls_pred_binary], [cls_gt_binary])
+                class_bpq[cls_id].append(cls_bpq)
+
         # AP (per-class Hungarian matching on mask IoU)
         for cls_id in range(num_classes):
             cls_pred_masks = [pred_masks[j] for j in range(len(pred_masks)) if j < len(pred_cls_per_inst) and pred_cls_per_inst[j] == cls_id + 1]
@@ -308,6 +318,25 @@ def compute_metrics_streaming(
         centroid_tp += tp
         centroid_fp += n_pred - tp
         centroid_fn += n_gt - tp
+
+        # Per-class centroid F1 (Hungarian, r=12)
+        if n_pred > 0 and n_gt > 0:
+            for cls_id in range(num_classes):
+                p_idx = [j for j in range(n_pred) if pred_cls_per_inst[j] == cls_id + 1]
+                g_idx = [j for j in range(n_gt) if gt_cls_per_inst[j] == cls_id + 1]
+                if not p_idx and not g_idx:
+                    continue
+                if p_idx and g_idx:
+                    p_pts = pred_centroids[p_idx]
+                    g_pts = gt_centroids[g_idx]
+                    dm = np.linalg.norm(p_pts[:, None, :] - g_pts[None, :, :], axis=2)
+                    ri2, ci2 = linear_sum_assignment(dm)
+                    ctp = int((dm[ri2, ci2] <= 12).sum())
+                else:
+                    ctp = 0
+                class_ct_tp[cls_id] += ctp
+                class_ct_fp[cls_id] += len(p_idx) - ctp
+                class_ct_fn[cls_id] += len(g_idx) - ctp
 
         tissue = tissue_indices[i]
         if 0 <= tissue < len(PANNUKE_TISSUES):
@@ -367,9 +396,20 @@ def compute_metrics_streaming(
 
     # Per-class PQ means
     per_class_pq = {}
+    per_class_bpq = {}
+    per_class_centroid = {}
     for c in range(num_classes):
         valid_pq = [v for v in class_pq[c] if v > 0]
+        valid_bpq = [v for v in class_bpq[c] if v > 0]
         per_class_pq[CLASS_NAMES_PANNUKE[c]] = float(np.mean(valid_pq)) if valid_pq else 0.0
+        per_class_bpq[CLASS_NAMES_PANNUKE[c]] = float(np.mean(valid_bpq)) if valid_bpq else 0.0
+        ctp = class_ct_tp[c]
+        cfp = class_ct_fp[c]
+        cfn = class_ct_fn[c]
+        cp = ctp / (ctp + cfp) if (ctp + cfp) > 0 else 0.0
+        cr = ctp / (ctp + cfn) if (ctp + cfn) > 0 else 0.0
+        cf = 2 * cp * cr / (cp + cr) if (cp + cr) > 0 else 0.0
+        per_class_centroid[CLASS_NAMES_PANNUKE[c]] = {"precision": cp, "recall": cr, "f1": cf}
 
     return {
         "aji": mean_aji,
@@ -380,6 +420,8 @@ def compute_metrics_streaming(
         "ap": ap_results,
         "centroid": {"precision": prec, "recall": rec, "f1": f1},
         "per_class_pq": per_class_pq,
+        "per_class_bpq": per_class_bpq,
+        "per_class_centroid": per_class_centroid,
         "tissue_aji": tissue_aji,
         "tissue_bpq": tissue_bpq,
         "tissue_mpq": tissue_mpq,
@@ -430,15 +472,24 @@ def _print_tissue_breakdown(metrics: dict, tissue_indices: list[int]) -> None:
 
 
 def _print_nuclei_breakdown(metrics: dict) -> None:
-    per_class = metrics["per_class_pq"]
-    print(f"\n{'='*50}")
-    print("  Nuclei Class Breakdown (mPQ per class)")
-    print(f"{'='*50}")
-    print(f"  {'Class':<16} {'mPQ':>7}")
-    print(f"  {'-'*16} {'-'*7}")
+    per_class_pq = metrics["per_class_pq"]
+    per_class_bpq = metrics["per_class_bpq"]
+    per_class_ct = metrics["per_class_centroid"]
+    w = 70
+    print(f"\n{'='*w}")
+    print("  Nuclei Class Breakdown")
+    print(f"{'='*w}")
+    print(f"  {'Class':<16} {'bPQ':>7} {'mPQ':>7} {'Prec':>7} {'Recall':>7} {'F1':>7}")
+    print(f"  {'-'*16} {'-'*7} {'-'*7} {'-'*7} {'-'*7} {'-'*7}")
     for name in CLASS_NAMES_PANNUKE:
-        print(f"  {name.capitalize():<16} {per_class.get(name, 0.0):>7.4f}")
-    print(f"{'='*50}")
+        pq = per_class_pq.get(name, 0.0)
+        bpq = per_class_bpq.get(name, 0.0)
+        ct = per_class_ct.get(name, {})
+        p = ct.get("precision", 0.0)
+        r = ct.get("recall", 0.0)
+        f1 = ct.get("f1", 0.0)
+        print(f"  {name.capitalize():<16} {bpq:>7.4f} {pq:>7.4f} {p:>7.4f} {r:>7.4f} {f1:>7.4f}")
+    print(f"{'='*w}")
 
 
 # ---------------------------------------------------------------------------
