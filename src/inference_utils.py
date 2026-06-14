@@ -59,7 +59,7 @@ def run_inference(dataloader, models, aug, color_aug_fn, tta=16, rank=0):
             torch.cuda.empty_cache()
 
     print("Concatenating inference results ...")
-    pred_emb_list = np.concatenate(pred_emb_list)
+    pred_emb_list = np.stack(pred_emb_list)
     pred_class_list = np.concatenate(pred_class_list)
     gt_list = np.concatenate(gt_list)
     return pred_emb_list, pred_class_list, gt_list, None
